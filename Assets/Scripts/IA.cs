@@ -2,223 +2,92 @@ using UnityEngine.AI;
 using UnityEngine;
 using System.Collections;
 
-public class DinoAI : MonoBehaviour
+public class IA : MonoBehaviour
 {
     public NavMeshAgent agent;
-
     public Transform player;
+    public Animator animator;
 
-    public LayerMask whatIsGround, whatIsPlayer;
+    [Header("Patrullaje")]
+    public float patrolRadius = 10f;
 
-    public float health;
+    [Header("Detección y Ataque")]
+    public float visionRange = 15f;
+    public float attackRange = 2f;
 
-    private Animator myAnim;
+    private Vector3 patrolPoint;
 
-    // Colliders/triggers
-    public MeshCollider body;
-    public BoxCollider attackCollider;
-
-    // Patrullaje
-    public Vector3 walkPoint;
-    public bool walkPointSet;
-    public float walkPointRange;
-
-    // Estados
-    public float sightRange, attackRange;
-    public bool playerInSight, playerInAttackRange;
-
-    // Evento para cuando el Dino muere
-    public delegate void DinoKilled(int points);
-    public static event DinoKilled OnDinoKilled;
-    private bool isDead = false;
-
-    // Points
-    public int Points;
-
-    // Kill Counter
-    //private DinosaurCounter dinosaurCounter;
-
-    // Audio
-    //public AudioClip destroySound;
-    private AudioSource audioSource;
-    private Coroutine patrolCoroutine;
-
-    //Speed
-    public float patrolSpeed;
-    public float chaseSpeed;
-
-
-    private void Awake()
+    void Start()
     {
-        body = GetComponent<MeshCollider>();
-        myAnim = GetComponent<Animator>();
-        player = GameObject.FindGameObjectWithTag("Player").transform;
         agent = GetComponent<NavMeshAgent>();
-        //dinosaurCounter = FindObjectOfType<DinosaurCounter>();
-        audioSource = GetComponent<AudioSource>();
+        animator = GetComponent<Animator>();
+        SetNewPatrolPoint();
     }
 
-    private void Update()
+    void Update()
     {
-        playerInSight = Physics.CheckSphere(transform.position, sightRange, whatIsPlayer);
-        playerInAttackRange = Physics.CheckSphere(transform.position, attackRange, whatIsPlayer);
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
-        if (!playerInSight && !playerInAttackRange)
+        if (distanceToPlayer <= attackRange)
         {
-            Patroling();
+            Attack();
         }
-
-        if (playerInSight && !playerInAttackRange)
+        else if (distanceToPlayer <= visionRange)
         {
-            Chasing();
+            ChasePlayer();
         }
-
-        if (playerInAttackRange && playerInSight)
+        else
         {
-            Attacking();
+            Patrol();
         }
     }
 
-
-    private void Patroling()
+    void Patrol()
     {
-        myAnim.SetBool("isRunning", false);
-        myAnim.SetBool("isAttacking", false);
-        myAnim.SetBool("isWalking", true);
-
-        if (!walkPointSet)
+        if (!agent.hasPath || agent.remainingDistance < 1f)
         {
-            SearchWalkPoint();
+            SetNewPatrolPoint(); // Busca un nuevo punto de inmediato
         }
 
-        if (walkPointSet && patrolCoroutine == null)
-        {
-            agent.speed = patrolSpeed; 
-            agent.SetDestination(walkPoint);
-            patrolCoroutine = StartCoroutine(CheckIfArrived());
-        }
-
-        Vector3 distanceToWalk = transform.position - walkPoint;
-
-        if (distanceToWalk.magnitude < 1)
-        {
-            walkPointSet = false;
-        }
+        animator.SetBool("isWalking", true);
+        animator.SetBool("isAttacking", false);
+        animator.SetBool("isRunning", false);
     }
 
-    private void SearchWalkPoint()
+    void ChasePlayer()
     {
-        myAnim.SetBool("isWalking", true);
-        myAnim.SetBool("isRunning", false);
-        float randomZ = Random.Range(-walkPointRange, walkPointRange);
-        float randomx = Random.Range(-walkPointRange, walkPointRange);
-
-        walkPoint = new Vector3(transform.position.x + randomx, transform.position.y, transform.position.z + randomZ);
-
-        if (Physics.Raycast(walkPoint, -transform.up, 2, whatIsGround))
-        {
-            walkPointSet = true;
-        }
-    }
-
-    private void Chasing()
-    {
-        myAnim.SetBool("isWalking", false);
-        myAnim.SetBool("isRunning", true);
-        agent.speed = chaseSpeed; 
         agent.SetDestination(player.position);
+        animator.SetBool("isWalking", false) ;
+        animator.SetBool("isRunning", true);
+        animator.SetBool("isAttacking", false);
     }
 
-    private void Attacking()
+    void Attack()
     {
-        agent.SetDestination(transform.position);
-        myAnim.SetBool("isWalking", false);
-        myAnim.SetBool("isRunning", false);
-        myAnim.SetBool("isAttacking", true);
+        agent.ResetPath();
+        animator.SetBool("isWalking", false);
+        animator.SetBool("isRunning", false);
+        animator.SetBool("isAttacking", true);
     }
 
-    public void TakeDamage(int damage)
+    void SetNewPatrolPoint()
     {
-        health -= damage;
-
-        if (health <= 0)
+        Vector3 randomDirection = Random.insideUnitSphere * patrolRadius;
+        randomDirection += transform.position;
+        NavMeshHit hit;
+        if (NavMesh.SamplePosition(randomDirection, out hit, patrolRadius, 1))
         {
-            DestroyDino();
+            patrolPoint = hit.position;
+            agent.SetDestination(patrolPoint);
         }
     }
 
-    private void DestroyDino()
+    void OnDrawGizmosSelected()
     {
-        if (!isDead)
-        {
-            isDead = true;
-            agent.isStopped = true;
-            myAnim.SetBool("isRunning", false);
-            myAnim.SetBool("isWalking", false);
-            myAnim.SetBool("isAttacking", false);
-            myAnim.SetBool("isDead", true);
-            print("im dying");
-            body.enabled = false;
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, visionRange);
 
-            OnDinoKilled?.Invoke(Points);
-
-            int currentPoints = PlayerPrefs.GetInt("TotalPoints", 0);
-            currentPoints += Points;
-            PlayerPrefs.SetInt("TotalPoints", currentPoints);
-            PlayerPrefs.Save();
-
-            Transform mouthTransform = transform.Find("DinosaurMouth");
-            if (mouthTransform != null)
-            {
-                GameObject mouthObject = mouthTransform.gameObject;
-                BoxCollider mouthCollider = mouthObject.GetComponent<BoxCollider>();
-                if (mouthCollider != null)
-                {
-                    mouthCollider.enabled = false;
-                }
-            }
-
-            //if (dinosaurCounter != null)
-            //{
-                //dinosaurCounter.IncrementKillsCount();
-            //}
-
-            //if (destroySound != null && audioSource != null)
-            //{
-                //audioSource.PlayOneShot(destroySound);
-            //}
-
-            Destroy(gameObject, 3);
-        }
-    }
-
-    private IEnumerator CheckIfArrived()
-    {
-        float waitTime = 6f;
-        float elapsedTime = 0f;
-
-        while (elapsedTime < waitTime)
-        {
-            if (agent.remainingDistance <= agent.stoppingDistance)
-            {
-                walkPointSet = false;
-                patrolCoroutine = null;
-                yield break; 
-            }
-            elapsedTime += Time.deltaTime;
-            yield return null;
-        }
-
-        walkPointSet = false;
-        SearchWalkPoint();
-        patrolCoroutine = null;
-    }
-
-    private void OnDrawGizmos()
-    {
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, attackRange);
-        Gizmos.color = Color.blue;
-        Gizmos.DrawWireSphere(transform.position, sightRange);
     }
 }
