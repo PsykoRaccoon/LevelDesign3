@@ -22,17 +22,17 @@ public class DeliveryManager : MonoBehaviour
     }
 
     public void RegisterDelivery()
-{
-    currentDeliveries++;
-
-    ShowFeedback("¡Paquete entregado!");
-
-    if (currentDeliveries >= totalRequiredDeliveries)
     {
-        ShowFeedback("¡Cuidado con este vecino!");
-        SpawnBoss();
+        currentDeliveries++;
+
+        ShowFeedback("¡Paquete entregado!");
+
+        if (currentDeliveries >= totalRequiredDeliveries)
+        {
+            ShowFeedback("¡Cuidado con este vecino!");
+            SpawnBoss();
+        }
     }
-}
 
     void SpawnBoss()
     {
